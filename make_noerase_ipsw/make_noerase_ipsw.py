@@ -1,4 +1,20 @@
-import os, zipfile, sys, tempfile, shutil, plistlib, traceback
+import os
+import zipfile
+import sys
+import tempfile
+import shutil
+import plistlib
+import traceback
+import argparse
+
+sys.tracebacklimit = 0
+assert sys.version_info >= (2, 7), "This script only supports Python 2.7"
+sys.tracebacklimit = 1000  # The default.
+
+print("*" * 50)
+print("This script does not support iOS 11 or above!!")
+print("*" * 50)
+print("")
 
 
 def recursive_zip(zipf, basePath, zipPath=""):
@@ -19,7 +35,7 @@ def fix_ramdisk_dict(ramdisks):
 def fix_build_manifest(ipswDir):
     buildManifestPlist = os.path.join(ipswDir, "BuildManifest.plist")
     if not os.path.exists(buildManifestPlist):
-        print "No BuildManifest file"
+        print("No BuildManifest file")
         return
 
     buildManifest = plistlib.readPlist(buildManifestPlist)
@@ -33,7 +49,7 @@ def fix_build_manifest(ipswDir):
 
     for i in range(len(buildIdentities)):
         biInfo = buildIdentities[i]["Info"]
-        # print "Build identity %i: %s" % (i, biInfo["RestoreBehavior"])
+        # print("Build identity %i: %s" % (i, biInfo["RestoreBehavior"]))
         if biInfo["RestoreBehavior"] == "Erase":
             restoreIndex.append(i)
         elif biInfo["RestoreBehavior"] == "Update":
@@ -56,8 +72,7 @@ def fix_build_manifest(ipswDir):
         updateBiInfo["VariantContents"]["RestoreRamDisk"] = "CustomerRamDisk"
 
     plistlib.writePlist(buildManifest, buildManifestPlist)
-
-    print "Written BuildManifest.plist"
+    print("Written BuildManifest.plist")
 
 
 def make_upgrade_only(ipswDir):
@@ -66,24 +81,24 @@ def make_upgrade_only(ipswDir):
 
     restoreRamDisks = restore["RestoreRamDisks"]
 
-    print "Update RD: %s, restore RD: %s" % (restoreRamDisks["Update"], restoreRamDisks["User"])
+    print("Update RD: %s, restore RD: %s" % (restoreRamDisks["Update"], restoreRamDisks["User"]))
 
     updateRamdisk = restoreRamDisks["Update"]
     restoreRamdisk = restoreRamDisks["User"]
 
     os.remove(os.path.join(ipswDir, restoreRamdisk))
-    print "Deleted RESTORE ramdisk file: %s" % restoreRamdisk
+    print("Deleted RESTORE ramdisk file: %s" % restoreRamdisk)
 
     fix_ramdisk_dict(restoreRamDisks)
 
     for platformName, platInfo in restore["RamDisksByPlatform"].items():
-        print "Platform: %s, update RD: %s, restore RD: %s" % (platformName, platInfo["Update"], platInfo["User"])
+        print("Platform: %s, update RD: %s, restore RD: %s" % (platformName, platInfo["Update"], platInfo["User"]))
         fix_ramdisk_dict(platInfo)
 
-    plistlib.writePlist(restore, restorePlist)
-    print "Written Restore.plist"
+        plistlib.writePlist(restore, restorePlist)
+        print("Written Restore.plist")
 
-    fix_build_manifest(ipswDir)
+        fix_build_manifest(ipswDir)
 
 
 def has_build_manifest(ipsw):
@@ -100,59 +115,57 @@ def ipsw_info(ipswDir):
         return
 
     buildManifest = plistlib.readPlist(buildManifestPlist)
-    print "ProductVersion: %s, ProductBuildVersion: %s, SupportedProductTypes: %s" % (
-        buildManifest["ProductVersion"], buildManifest["ProductBuildVersion"], buildManifest["SupportedProductTypes"])
+    print("ProductVersion: %s, ProductBuildVersion: %s, SupportedProductTypes: %s" % (
+        buildManifest["ProductVersion"], buildManifest["ProductBuildVersion"], buildManifest["SupportedProductTypes"]))
 
 
 def main():
-    if len(sys.argv) <= 1:
-        print "Usage: %s <ipsw file>" % sys.argv[0]
-        return
+    parser = argparse.ArgumentParser()
+    # parser.add_argument('--modern', action="store_true", help="Set this if the IPSW is for iOS 11", default=False)
+    parser.add_argument('--ipsw', action="store", help="The path to your IPSW file")
+    global args
+    args = parser.parse_args()
 
-    origIpsw = sys.argv[1]
+    origIpsw = args.ipsw
 
-    print "Original IPSW file: %s" % origIpsw
+    print("Original IPSW file: %s" % origIpsw)
     if not zipfile.is_zipfile(origIpsw):
-        print "Not a valid IPSW file:", origIpsw
+        print("Not a valid IPSW file:", origIpsw)
         return
     try:
         ipsw = zipfile.ZipFile(origIpsw)
-    except:
-        print "Failed to open", origIpsw
+    except StandardError:
+        print("Failed to open", origIpsw)
         return
 
     if not has_build_manifest(ipsw):
-        print "IPSW for an unsupported device: BuildManifest.plist missing!"
+        print("IPSW for an unsupported device: BuildManifest.plist missing!")
         return
 
     tempDir = tempfile.mkdtemp()
-    print "Unpacking to %s ..." % tempDir
+    print("Unpacking to %s ..." % tempDir)
     ipsw.extractall(tempDir)
     ipsw.close()
 
     ipsw_info(tempDir)
-
     make_upgrade_only(tempDir)
 
     newPath = os.path.split(origIpsw)
     newIpsw = os.path.join(newPath[0], "UPG_" + newPath[1])
-    print "Packing upgrade-only IPSW to %s ..." % newIpsw
+    print("Packing upgrade-only IPSW to %s ..." % newIpsw)
     ipswUp = zipfile.ZipFile(newIpsw, mode='w', allowZip64=True)
     recursive_zip(ipswUp, tempDir)
     ipswUp.close()
 
-    print "Cleaning up"
+    print("Cleaning up...")
     shutil.rmtree(tempDir)
 
 
 if __name__ == '__main__':
     try:
         main()
-        print
-        print "Press Enter to exit."
-        blah = raw_input()
-    except:
+        print("")
+    except StandardError:
         traceback.print_exc()
-        print >> sys.stderr
-        print >> sys.stderr, "Press Enter to exit."
-        blah = raw_input()
+        sys.stderr.write("")
+        sys.exit()
